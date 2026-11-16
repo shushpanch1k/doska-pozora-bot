@@ -59,7 +59,7 @@ async def on_member_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🚨 <b>НОВЫЙ НОМИНАНТ НА ДОСКЕ ПОЗОРА</b> 🚨\n\n"
         f"👤 Участник: {label(user)}\n"
         f"📅 Дата: {now}\n\n"
-        "Причина: <b>ХУЕСОС И ГОВНО.</b>\n"
+        "Причина: <b>Сбежал с позором.</b>\n"
         "🏆 Место в истории позора присвоено."
     )
     await context.bot.send_message(
@@ -102,7 +102,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Я веду доску позора. Команды:\n"
-        "/pozor — последние 10 записей\n"
+        "/pozor — последние 1000 записей\n"
         "/stats — общее число выходов"
     )
 
