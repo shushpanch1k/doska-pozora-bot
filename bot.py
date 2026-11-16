@@ -97,7 +97,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "SELECT COUNT(*) FROM exits WHERE chat_id=?", (update.effective_chat.id,)
     ).fetchone()[0]
     conn.close()
-    await update.message.reply_text(f"🏃 Всего беглецов зафиксировано: {count}")
+    await update.message.reply_text(f"💩 Всего позорников зафиксировано: {count}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
