@@ -60,7 +60,9 @@ async def on_member_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 Участник: {label(user)}\n"
         f"📅 Дата: {now}\n\n"
         "Причина: <b>Сбежал с позором.</b>\n"
-        "🏆 Место в истории позора присвоено."
+        "🏆 Место в истории позора присвоено.
+        "Чтобы посмотреть весь список, нажмите"
+        "/pozor"
     )
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -73,7 +75,7 @@ async def pozor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     conn = db()
     rows = conn.execute(
-        "SELECT display_name, username, exited_at FROM exits WHERE chat_id=? ORDER BY id DESC LIMIT 10",
+        "SELECT display_name, username, exited_at FROM exits WHERE chat_id=? ORDER BY id DESC LIMIT 1000",
         (chat_id,)
     ).fetchall()
     total = conn.execute(
@@ -85,7 +87,7 @@ async def pozor(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пока доска позора пуста. Наслаждайтесь подозрительным спокойствием 😇")
         return
 
-    lines = [f"🚨 <b>ДОСКА ПОЗОРА</b> — всего записей: <b>{total}</b>\n"]
+    lines = [f"🤮 <b>ДОСКА ПОЗОРА</b> — всего записей: <b>{total}</b>\n"]
     for i, (name, username, when) in enumerate(rows, 1):
         who = f"@{html.escape(username)}" if username else html.escape(name)
         lines.append(f"{i}. {who} — {html.escape(when)}")
