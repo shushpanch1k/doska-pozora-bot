@@ -55,15 +55,14 @@ async def on_member_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
 
-    message = (
-        "🚨 <b>НОВЫЙ НОМИНАНТ НА ДОСКЕ ПОЗОРА</b> 🚨\n\n"
-        f"👤 Участник: {label(user)}\n"
-        f"📅 Дата: {now}\n\n"
-        "Причина: <b>Сбежал с позором.</b>\n"
-        "🏆 Место в истории позора присвоено."
-        "Чтобы посмотреть весь список, нажмите"
-        "/pozor"
-    )
+   message = (
+    "🚨 НОВЫЙ НОМИНАНТ НА ДОСКЕ ПОЗОРА 🚨\n\n"
+    f"👤 Участник: {username} ({name})\n"
+    f"📅 Дата: {date}\n\n"
+    "Причина: Сбежал с позором.\n"
+    "🏆 Место в истории позора присвоено.\n\n"
+    "📋 Чтобы посмотреть весь список, нажмите /pozor"
+)
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=message,
