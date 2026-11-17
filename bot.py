@@ -1,18 +1,43 @@
 import os
-import html
 import sqlite3
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from html import escape
+
 from telegram import Update
-from telegram.constants import ParseMode
-from telegram.ext import Application, ChatMemberHandler, CommandHandler, ContextTypes
+from telegram.constants import ChatMemberStatus
+from telegram.ext import (
+    Application,
+    ChatMemberHandler,
+    CommandHandler,
+    ContextTypes,
+)
+
+# Railway Variables:
+# BOT_TOKEN = token from BotFather
+# DB_PATH = /app/data/pozor.sqlite3
 
 TOKEN = os.environ["BOT_TOKEN"]
-DB_PATH = os.environ.get("DB_PATH", "/app/data/pozor.sqlite3")
+DB_PATH = os.getenv("DB_PATH", "/app/data/pozor.sqlite3")
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
-def db():
-    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+
+def get_db():
+    folder = os.path.dirname(DB_PATH)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS exits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER NOT NULL,
@@ -21,99 +46,172 @@ def db():
             username TEXT,
             exited_at TEXT NOT NULL
         )
-    """)
+        """
+    )
     conn.commit()
     return conn
 
-def label(user):
-    name = html.escape(user.full_name or "Без имени")
-    if user.username:
-        return f"@{html.escape(user.username)} ({name})"
-    return f'<a href="tg://user?id={user.id}">{name}</a>'
 
-async def on_member_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def format_person(username, display_name):
+    safe_name = escape(display_name or "Без имени")
+    if username:
+        safe_username = escape(username)
+        return f"@{safe_username} ({safe_name})"
+    return safe_name
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        "Привет! Я веду доску позора этого чата. 💀\n\n"
+        "/pozor — посмотреть список выбывших\n"
+        "/stats — статистика выходов"
+    )
+
+
+async def on_member_change(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     change = update.chat_member
-    if not change:
+    if change is None:
         return
 
-    old = change.old_chat_member.status
-    new = change.new_chat_member.status
+    old_status = change.old_chat_member.status
+    new_status = change.new_chat_member.status
     user = change.new_chat_member.user
 
-    # Record only a genuine transition from a chat member to left/kicked.
-    was_member = old in ("member", "administrator", "creator", "restricted")
-    has_left = new in ("left", "kicked")
-    if not (was_member and has_left) or user.is_bot:
+    member_statuses = {
+        ChatMemberStatus.MEMBER,
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.OWNER,
+        ChatMemberStatus.RESTRICTED,
+    }
+    left_statuses = {
+        ChatMemberStatus.LEFT,
+        ChatMemberStatus.BANNED,
+    }
+
+    # Записываем только реальный переход из участника в вышедшие/заблокированные.
+    if old_status not in member_statuses or new_status not in left_statuses:
+        return
+    if user.is_bot:
         return
 
-    now = datetime.now(timezone.utc).astimezone().strftime("%d.%m.%Y в %H:%M")
-    conn = db()
+    now = datetime.now(MOSCOW_TZ).strftime("%d.%m.%Y в %H:%M")
+    conn = get_db()
     conn.execute(
-        "INSERT INTO exits (chat_id, user_id, display_name, username, exited_at) VALUES (?, ?, ?, ?, ?)",
-        (update.effective_chat.id, user.id, user.full_name, user.username, now)
+        """
+        INSERT INTO exits (chat_id, user_id, display_name, username, exited_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            update.effective_chat.id,
+            user.id,
+            user.full_name,
+            user.username,
+            now,
+        ),
     )
     conn.commit()
     conn.close()
+
+    username = f"@{user.username}" if user.username else "нет username"
+    display_name = escape(user.full_name or "Без имени")
+    safe_username = escape(username)
+
     message = (
-    "🚨 НОВЫЙ НОМИНАНТ НА ДОСКЕ ПОЗОРА 🚨\n\n"
-    f"👤 Участник: {username} ({name})\n"
-    f"📅 Дата: {date}\n\n"
-    "Причина: Сбежал с позором.\n"
-    "🏆 Место в истории позора присвоено.\n\n"
-    "📋 Чтобы посмотреть весь список, нажмите /pozor"
-)
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=message,
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=True
+        "🚨 <b>НОВЫЙ НОМИНАНТ НА ДОСКЕ ПОЗОРА</b> 🚨\n\n"
+        f"👤 Участник: {safe_username} ({display_name})\n"
+        f"📅 Дата: {now}\n\n"
+        "Причина: Сбежал с позором.\n"
+        "🏆 Место в истории позора присвоено.\n\n"
+        "📋 Чтобы посмотреть весь список, нажмите /pozor"
     )
+
+    try:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=message,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        logger.exception("Не удалось отправить сообщение о выходе участника")
+
 
 async def pozor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    conn = db()
+    conn = get_db()
     rows = conn.execute(
-        "SELECT display_name, username, exited_at FROM exits WHERE chat_id=? ORDER BY id DESC LIMIT 1000",
-        (chat_id,)
+        """
+        SELECT display_name, username, exited_at
+        FROM exits
+        WHERE chat_id = ?
+        ORDER BY id DESC
+        """,
+        (chat_id,),
     ).fetchall()
-    total = conn.execute(
-        "SELECT COUNT(*) FROM exits WHERE chat_id=?", (chat_id,)
-    ).fetchone()[0]
     conn.close()
 
     if not rows:
-        await update.message.reply_text("Пока доска позора пуста. Наслаждайтесь подозрительным спокойствием 😇")
+        await update.effective_message.reply_text(
+            "📋 Доска позора пока пуста. Никто ещё не сбежал!"
+        )
         return
 
-    lines = [f"🤮 <b>ДОСКА ПОЗОРА</b> — всего записей: <b>{total}</b>\n"]
-    for i, (name, username, when) in enumerate(rows, 1):
-        who = f"@{html.escape(username)}" if username else html.escape(name)
-        lines.append(f"{i}. {who} — {html.escape(when)}")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+    total = len(rows)
+    header = f"📋 <b>ПОЛНЫЙ СПИСОК ДОСКИ ПОЗОРА</b>\nВсего номинантов: {total}\n\n"
+    lines = []
+    for number, row in enumerate(rows, start=1):
+        person = format_person(row["username"], row["display_name"])
+        lines.append(
+            f"{number}. {person}\n"
+            f"   📅 {escape(row['exited_at'])}"
+        )
+
+    # Telegram ограничивает длину сообщения; отправляем список частями.
+    current = header
+    for line in lines:
+        addition = line + "\n\n"
+        if len(current) + len(addition) > 3800:
+            await update.effective_message.reply_text(
+                current, parse_mode="HTML"
+            )
+            current = ""
+        current += addition
+
+    if current:
+        await update.effective_message.reply_text(current, parse_mode="HTML")
+
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = db()
-    count = conn.execute(
-        "SELECT COUNT(*) FROM exits WHERE chat_id=?", (update.effective_chat.id,)
-    ).fetchone()[0]
+    chat_id = update.effective_chat.id
+    conn = get_db()
+    row = conn.execute(
+        "SELECT COUNT(*) AS total FROM exits WHERE chat_id = ?",
+        (chat_id,),
+    ).fetchone()
     conn.close()
-    await update.message.reply_text(f"💩 Всего позорников зафиксировано: {count}")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Я веду доску позора. Команды:\n"
-        "/pozor — последние 1000 записей\n"
-        "/stats — общее число выходов"
+    await update.effective_message.reply_text(
+        f"📊 Всего выходов из чата: {row['total']}"
     )
 
+
 def main():
-    db().close()
+    # Один polling-процесс должен работать с этим токеном.
     app = Application.builder().token(TOKEN).build()
-    app.add_handler(ChatMemberHandler(on_member_change, ChatMemberHandler.CHAT_MEMBER))
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("pozor", pozor))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(
+        ChatMemberHandler(on_member_change, ChatMemberHandler.CHAT_MEMBER)
+    )
+
+    logger.info("Бот запускается. Часовой пояс: Москва.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == "__main__":
     main()
