@@ -54,8 +54,7 @@ async def on_member_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     conn.commit()
     conn.close()
-
-   message = (
+    message = (
     "🚨 НОВЫЙ НОМИНАНТ НА ДОСКЕ ПОЗОРА 🚨\n\n"
     f"👤 Участник: {username} ({name})\n"
     f"📅 Дата: {date}\n\n"
