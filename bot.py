@@ -60,7 +60,7 @@ async def on_member_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 Участник: {label(user)}\n"
         f"📅 Дата: {now}\n\n"
         "Причина: <b>Сбежал с позором.</b>\n"
-        "🏆 Место в истории позора присвоено.
+        "🏆 Место в истории позора присвоено."
         "Чтобы посмотреть весь список, нажмите"
         "/pozor"
     )
